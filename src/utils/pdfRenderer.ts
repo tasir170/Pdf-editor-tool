@@ -84,6 +84,10 @@ export interface ExtractedPdfTextItem {
   width: number;
   height: number;
   fontSize: number;
+  fontFamily: 'Helvetica' | 'Times' | 'Courier';
+  isBold: boolean;
+  isItalic: boolean;
+  color?: string;
 }
 
 /**
@@ -135,11 +139,37 @@ export async function renderSinglePageHiRes(
       if ('str' in item && typeof item.str === 'string' && item.str.trim()) {
         const tx = item.transform[4];
         const ty = item.transform[5];
-        const fontSize = Math.max(8, Math.round(Math.hypot(item.transform[0], item.transform[1])));
+
+        // In PDF transformation matrices:
+        // transform is [scaleX * cos, scaleX * sin, -scaleY * sin, scaleY * cos, tx, ty]
+        // The vertical font size in points is hypot(transform[2], transform[3]) or hypot(transform[0], transform[1])
+        const scaleY = Math.hypot(item.transform[2], item.transform[3]);
+        const scaleX = Math.hypot(item.transform[0], item.transform[1]);
+        const calculatedSize = scaleY > 0 ? scaleY : scaleX;
+        // Keep 1 decimal place of precision (e.g. 10.5, 11, 12, 14.4)
+        const fontSize = Math.max(6, Math.round(calculatedSize * 10) / 10);
+
         const w = Math.max(15, item.width || fontSize * item.str.length * 0.6);
         const h = Math.max(fontSize, item.height || fontSize);
         const x = tx;
         const y = unscaledViewport.height - ty - fontSize * 0.85;
+
+        // Detect font family, bold, and italic from PDF.js font descriptor and style
+        const fontName = item.fontName || '';
+        const style = textContent.styles && fontName ? textContent.styles[fontName] : null;
+        const styleFamily = style?.fontFamily || '';
+        const combinedFontInfo = `${fontName} ${styleFamily}`.toLowerCase();
+
+        // Check for Monospace (Courier, etc.)
+        const isMono = /courier|mono|consolas|menlo|fixed|typewriter|source\s*code/i.test(combinedFontInfo);
+        // Check for Serif (Times New Roman, Georgia, etc.)
+        const isSerif = !isMono && /times|roman|georgia|serif|cambria|garamond|minion|baskerville|palatino|century|bookman/i.test(combinedFontInfo);
+        const fontFamily: 'Helvetica' | 'Times' | 'Courier' = isMono ? 'Courier' : isSerif ? 'Times' : 'Helvetica';
+
+        // Check for Bold
+        const isBold = /bold|black|heavy|medium|demi|w[7-9]|semibold/i.test(combinedFontInfo);
+        // Check for Italic / Oblique
+        const isItalic = /italic|oblique|slanted/i.test(combinedFontInfo);
 
         extractedTextItems.push({
           id: `raw-text-${pageNumber}-${idx}`,
@@ -149,6 +179,10 @@ export async function renderSinglePageHiRes(
           width: w,
           height: h,
           fontSize,
+          fontFamily,
+          isBold,
+          isItalic,
+          color: '#0f172a',
         });
       }
     }

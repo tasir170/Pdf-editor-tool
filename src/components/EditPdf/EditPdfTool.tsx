@@ -66,6 +66,7 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
   const [textSize, setTextSize] = useState<number>(14);
   const [textFontFamily, setTextFontFamily] = useState<'Helvetica' | 'Times' | 'Courier'>('Helvetica');
   const [textIsBold, setTextIsBold] = useState<boolean>(false);
+  const [textIsItalic, setTextIsItalic] = useState<boolean>(false);
   const [penColor, setPenColor] = useState<string>('#2563eb');
   const [penWidth, setPenWidth] = useState<number>(3);
   const [highlighterColor, setHighlighterColor] = useState<string>('#fde047');
@@ -78,6 +79,19 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
   const [history, setHistory] = useState<Annotation[][]>([]);
   const [historyStep, setHistoryStep] = useState<number>(-1);
   const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
+
+  // Synchronize toolbar controls when a text annotation is selected
+  useEffect(() => {
+    if (!selectedAnnId) return;
+    const ann = annotations.find((a) => a.id === selectedAnnId);
+    if (ann && ann.type === 'text') {
+      setTextFontFamily(ann.fontFamily || 'Helvetica');
+      setTextSize(ann.fontSize || 14);
+      setTextIsBold(!!ann.isBold);
+      setTextIsItalic(!!ann.isItalic);
+      setTextColor(ann.color || '#0f172a');
+    }
+  }, [selectedAnnId, annotations]);
 
   // Page rotations & deletions
   const [pageRotations, setPageRotations] = useState<Record<number, number>>({});
@@ -183,6 +197,7 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
   }, [pdfData, currentPageIndex, zoomScale]);
 
   // Convert existing static PDF text into an active editable & draggable writing box
+  // PRESERVES EXACT original font size, font family, bold, and italic weights!
   const handleEditExistingText = (item: ExtractedPdfTextItem) => {
     // 1. Cover original static text with matching whiteout box
     const whiteoutAnn: Annotation = {
@@ -199,7 +214,7 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
       opacity: 1,
     };
 
-    // 2. Spawn editable writing box at exact location with original text
+    // 2. Spawn editable writing box with identical font size, family, and style!
     const textAnn: TextAnnotation = {
       id: `text-orig-${Date.now()}-${item.id}`,
       pageIndex: currentPageIndex,
@@ -207,15 +222,23 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
       x: item.x,
       y: item.y,
       text: item.str,
-      fontSize: item.fontSize,
-      color: '#0f172a',
-      fontFamily: 'Helvetica',
-      isBold: false,
+      fontSize: item.fontSize, // Exact original font size in points
+      color: item.color || '#0f172a',
+      fontFamily: item.fontFamily || 'Helvetica', // Exact matched font family
+      isBold: !!item.isBold, // Exact bold weight
+      isItalic: !!item.isItalic, // Exact italic style
     };
 
     setConvertedTextIds((prev) => new Set(prev).add(item.id));
     pushHistory([...annotations, whiteoutAnn, textAnn]);
     setSelectedAnnId(textAnn.id);
+
+    // Sync toolbar immediately to match the clicked text
+    setTextFontFamily(textAnn.fontFamily);
+    setTextSize(textAnn.fontSize);
+    setTextIsBold(!!textAnn.isBold);
+    setTextIsItalic(!!textAnn.isItalic);
+    setTextColor(textAnn.color);
   };
 
   // Undo / Redo
@@ -796,11 +819,17 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
 
             {activeTool === 'text' && (
               <div className="flex items-center gap-3">
-                <span className="font-semibold text-slate-700">Text Options:</span>
+                <span className="font-semibold text-slate-700">Font:</span>
                 <select
                   value={textFontFamily}
-                  onChange={(e) => setTextFontFamily(e.target.value as any)}
-                  className="bg-white border border-slate-200 rounded px-2 py-1 text-xs"
+                  onChange={(e) => {
+                    const fam = e.target.value as 'Helvetica' | 'Times' | 'Courier';
+                    setTextFontFamily(fam);
+                    if (selectedAnnId) {
+                      updateAnnotation(selectedAnnId, { fontFamily: fam });
+                    }
+                  }}
+                  className="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-medium text-slate-800"
                 >
                   <option value="Helvetica">Helvetica (Sans)</option>
                   <option value="Times">Times New Roman (Serif)</option>
@@ -809,24 +838,59 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
 
                 <select
                   value={textSize}
-                  onChange={(e) => setTextSize(Number(e.target.value))}
-                  className="bg-white border border-slate-200 rounded px-2 py-1 text-xs"
+                  onChange={(e) => {
+                    const sz = Number(e.target.value);
+                    setTextSize(sz);
+                    if (selectedAnnId) {
+                      updateAnnotation(selectedAnnId, { fontSize: sz });
+                    }
+                  }}
+                  className="bg-white border border-slate-200 rounded px-2 py-1 text-xs font-medium text-slate-800"
                 >
-                  {[10, 12, 14, 16, 18, 20, 24, 28, 36].map((s) => (
-                    <option key={s} value={s}>
-                      {s} pt
-                    </option>
-                  ))}
+                  {/* Dynamic list including detected font size */}
+                  {Array.from(new Set([8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32, 36, 48, textSize]))
+                    .sort((a, b) => a - b)
+                    .map((s) => (
+                      <option key={s} value={s}>
+                        {s} pt {s === textSize && ![10, 12, 14, 16, 18].includes(s) ? '(current)' : ''}
+                      </option>
+                    ))}
                 </select>
 
+                {/* Bold Toggle */}
                 <button
                   type="button"
-                  onClick={() => setTextIsBold(!textIsBold)}
-                  className={`px-2 py-0.5 rounded font-bold border ${
-                    textIsBold ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-800'
+                  onClick={() => {
+                    const next = !textIsBold;
+                    setTextIsBold(next);
+                    if (selectedAnnId) {
+                      updateAnnotation(selectedAnnId, { isBold: next });
+                    }
+                  }}
+                  className={`px-2 py-0.5 rounded font-bold border transition-colors ${
+                    textIsBold ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
                   }`}
+                  title="Toggle Bold"
                 >
                   B
+                </button>
+
+                {/* Italic Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !textIsItalic;
+                    setTextIsItalic(next);
+                    if (selectedAnnId) {
+                      updateAnnotation(selectedAnnId, { isItalic: next });
+                    }
+                  }}
+                  className={`px-2.5 py-0.5 rounded italic font-serif border transition-colors ${
+                    textIsItalic ? 'bg-blue-600 text-white border-blue-600 font-bold' : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
+                  }`}
+                  title="Toggle Italic"
+                >
+                  I
                 </button>
 
                 <div className="flex items-center gap-1">
@@ -834,15 +898,21 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
                     <button
                       key={c}
                       type="button"
-                      onClick={() => setTextColor(c)}
+                      onClick={() => {
+                        setTextColor(c);
+                        if (selectedAnnId) {
+                          updateAnnotation(selectedAnnId, { color: c });
+                        }
+                      }}
                       className={`w-5 h-5 rounded-full border ${
                         textColor === c ? 'ring-2 ring-blue-500 scale-110' : ''
                       }`}
                       style={{ backgroundColor: c }}
+                      title={`Color ${c}`}
                     />
                   ))}
                 </div>
-                <span className="text-slate-500">· Click existing text to edit · Drag grip to move writing</span>
+                <span className="text-slate-500">· Click any text to edit · Exact font size &amp; style are preserved</span>
               </div>
             )}
 
@@ -1227,11 +1297,12 @@ export const EditPdfTool: React.FC<EditPdfToolProps> = ({ autoLoadSample }) => {
                             fontSize: `${ann.fontSize * scale}px`,
                             color: ann.color,
                             fontWeight: ann.isBold ? 'bold' : 'normal',
+                            fontStyle: ann.isItalic ? 'italic' : 'normal',
                             fontFamily:
                               ann.fontFamily === 'Times'
-                                ? 'Times New Roman, serif'
+                                ? 'Times New Roman, Times, Georgia, serif'
                                 : ann.fontFamily === 'Courier'
-                                ? 'Courier, monospace'
+                                ? 'Courier New, Courier, monospace'
                                 : 'Helvetica, Arial, sans-serif',
                             width: `${Math.max(60, (ann.text.length + 1) * ann.fontSize * scale * 0.65)}px`,
                           }}

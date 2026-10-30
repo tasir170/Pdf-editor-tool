@@ -389,11 +389,21 @@ export async function applyAnnotationsToPdf(
   const pdfDoc = await PDFDocument.load(pdfBytes);
   const totalPages = pdfDoc.getPageCount();
 
-  // Embed standard fonts for text
+  // Embed comprehensive standard fonts for text matching
   const fontHelvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontHelveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const fontHelveticaOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  const fontHelveticaBoldOblique = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+
   const fontTimes = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+  const fontTimesBold = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
+  const fontTimesItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanItalic);
+  const fontTimesBoldItalic = await pdfDoc.embedFont(StandardFonts.TimesRomanBoldItalic);
+
   const fontCourier = await pdfDoc.embedFont(StandardFonts.Courier);
+  const fontCourierBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
+  const fontCourierOblique = await pdfDoc.embedFont(StandardFonts.CourierOblique);
+  const fontCourierBoldOblique = await pdfDoc.embedFont(StandardFonts.CourierBoldOblique);
 
   // Group annotations by pageIndex
   const annotationsByPage = new Map<number, Annotation[]>();
@@ -419,10 +429,26 @@ export async function applyAnnotationsToPdf(
     for (const ann of pageAnns) {
       if (ann.type === 'text') {
         const rgbColor = hexToRgb(ann.color);
+
+        // Select exact font variant based on family, bold, and italic
         let font = fontHelvetica;
-        if (ann.fontFamily === 'Times') font = fontTimes;
-        else if (ann.fontFamily === 'Courier') font = fontCourier;
-        else if (ann.isBold) font = fontHelveticaBold;
+        if (ann.fontFamily === 'Times') {
+          if (ann.isBold && ann.isItalic) font = fontTimesBoldItalic;
+          else if (ann.isBold) font = fontTimesBold;
+          else if (ann.isItalic) font = fontTimesItalic;
+          else font = fontTimes;
+        } else if (ann.fontFamily === 'Courier') {
+          if (ann.isBold && ann.isItalic) font = fontCourierBoldOblique;
+          else if (ann.isBold) font = fontCourierBold;
+          else if (ann.isItalic) font = fontCourierOblique;
+          else font = fontCourier;
+        } else {
+          // Helvetica / Sans-serif
+          if (ann.isBold && ann.isItalic) font = fontHelveticaBoldOblique;
+          else if (ann.isBold) font = fontHelveticaBold;
+          else if (ann.isItalic) font = fontHelveticaOblique;
+          else font = fontHelvetica;
+        }
 
         // In PDF coordinates: (0,0) is bottom-left, canvas is top-left
         const pdfY = height - ann.y - ann.fontSize * 0.8;

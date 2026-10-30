@@ -27,6 +27,7 @@ import {
   Check,
   ShieldCheck,
   PenTool,
+  Copy,
 } from 'lucide-react';
 import type { UploadedImage, PaperImageElement, PaperTextElement } from '../../types/pdf';
 import { ImageCropModal } from './ImageCropModal';
@@ -82,11 +83,11 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
   const [isConverting, setIsConverting] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Interaction tracking for dragging elements
+  // Interaction tracking for dragging & 4-corner resizing
   const paperRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{
     activeId: string | null;
-    type: 'move-img' | 'resize-img' | 'move-txt' | null;
+    type: 'move-img' | 'resize-nw' | 'resize-ne' | 'resize-se' | 'resize-sw' | 'move-txt' | null;
     startX: number;
     startY: number;
     elemStartX: number;
@@ -118,7 +119,7 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
     }
   }, [autoLoadSample]);
 
-  // Window pointer event listeners for dragging
+  // Window pointer event listeners for dragging and 4-corner resizing
   useEffect(() => {
     const handlePointerMove = (e: PointerEvent) => {
       const drag = dragRef.current;
@@ -128,6 +129,7 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
       const deltaY = (e.clientY - drag.startY) / sheetZoom;
 
       if (drag.type === 'move-img') {
+        // Free dragging across the page
         setSheetImages((prev) =>
           prev.map((item) => {
             if (item.id !== drag.activeId) return item;
@@ -136,11 +138,12 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
             return { ...item, x: Math.round(newX), y: Math.round(newY) };
           })
         );
-      } else if (drag.type === 'resize-img') {
+      } else if (drag.type === 'resize-se') {
+        // Bottom-Right Corner Resize
         setSheetImages((prev) =>
           prev.map((item) => {
             if (item.id !== drag.activeId) return item;
-            let newW = Math.max(60, drag.elemStartW + deltaX);
+            let newW = Math.max(40, drag.elemStartW + deltaX);
             let newH = newW / drag.aspectRatio;
             if (drag.elemStartX + newW > pageWidth) {
               newW = pageWidth - drag.elemStartX;
@@ -152,6 +155,88 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
             }
             return {
               ...item,
+              width: Math.round(newW),
+              height: Math.round(newH),
+            };
+          })
+        );
+      } else if (drag.type === 'resize-sw') {
+        // Bottom-Left Corner Resize
+        setSheetImages((prev) =>
+          prev.map((item) => {
+            if (item.id !== drag.activeId) return item;
+            let newW = Math.max(40, drag.elemStartW - deltaX);
+            let newH = newW / drag.aspectRatio;
+            let newX = drag.elemStartX + (drag.elemStartW - newW);
+            if (newX < 0) {
+              newW = drag.elemStartX + drag.elemStartW;
+              newH = newW / drag.aspectRatio;
+              newX = 0;
+            }
+            if (drag.elemStartY + newH > pageHeight) {
+              newH = pageHeight - drag.elemStartY;
+              newW = newH * drag.aspectRatio;
+              newX = drag.elemStartX + (drag.elemStartW - newW);
+            }
+            return {
+              ...item,
+              x: Math.round(newX),
+              width: Math.round(newW),
+              height: Math.round(newH),
+            };
+          })
+        );
+      } else if (drag.type === 'resize-ne') {
+        // Top-Right Corner Resize
+        setSheetImages((prev) =>
+          prev.map((item) => {
+            if (item.id !== drag.activeId) return item;
+            let newW = Math.max(40, drag.elemStartW + deltaX);
+            let newH = newW / drag.aspectRatio;
+            let newY = drag.elemStartY + (drag.elemStartH - newH);
+            if (newY < 0) {
+              newH = drag.elemStartY + drag.elemStartH;
+              newW = newH * drag.aspectRatio;
+              newY = 0;
+            }
+            if (drag.elemStartX + newW > pageWidth) {
+              newW = pageWidth - drag.elemStartX;
+              newH = newW / drag.aspectRatio;
+              newY = drag.elemStartY + (drag.elemStartH - newH);
+            }
+            return {
+              ...item,
+              y: Math.round(newY),
+              width: Math.round(newW),
+              height: Math.round(newH),
+            };
+          })
+        );
+      } else if (drag.type === 'resize-nw') {
+        // Top-Left Corner Resize
+        setSheetImages((prev) =>
+          prev.map((item) => {
+            if (item.id !== drag.activeId) return item;
+            let newW = Math.max(40, drag.elemStartW - deltaX);
+            let newH = newW / drag.aspectRatio;
+            let newX = drag.elemStartX + (drag.elemStartW - newW);
+            let newY = drag.elemStartY + (drag.elemStartH - newH);
+            if (newX < 0) {
+              newW = drag.elemStartX + drag.elemStartW;
+              newH = newW / drag.aspectRatio;
+              newX = 0;
+              newY = drag.elemStartY + (drag.elemStartH - newH);
+            }
+            if (newY < 0) {
+              newH = drag.elemStartY + drag.elemStartH;
+              newW = newH * drag.aspectRatio;
+              newX = drag.elemStartX + (drag.elemStartW - newW);
+              newY = 0;
+            }
+            return {
+              ...item,
+              x: Math.round(newX),
+              y: Math.round(newY),
               width: Math.round(newW),
               height: Math.round(newH),
             };
@@ -370,101 +455,18 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
     setTimeout(() => setSuccessMessage(null), 4000);
   };
 
-  // Presets
-  const applyCnicPreset = () => {
-    if (sheetImages.length === 0) {
-      handleLoadCnicSample();
-      return;
-    }
-
-    const cardW = 370;
-    const cardH = 233;
-    const centerX = Math.round((pageWidth - cardW) / 2);
-
-    const updated = sheetImages.map((img, idx) => {
-      if (idx === 0) {
-        return { ...img, x: centerX, y: 95, width: cardW, height: cardH };
-      }
-      if (idx === 1) {
-        return { ...img, x: centerX, y: 440, width: cardW, height: cardH };
-      }
-      return img;
-    });
-
-    setSheetImages(updated);
-
-    // If no texts, add standard labels
-    if (sheetTexts.length === 0) {
-      setSheetTexts([
-        {
-          id: `txt-${Date.now()}-1`,
-          text: 'CNIC / PASSPORT - FRONT SIDE',
-          x: centerX,
-          y: 75,
-          fontSize: 11,
-          color: '#0f172a',
-          isBold: true,
-          backgroundColor: 'none',
-        },
-        {
-          id: `txt-${Date.now()}-2`,
-          text: 'CNIC / PASSPORT - BACK SIDE',
-          x: centerX,
-          y: 420,
-          fontSize: 11,
-          color: '#0f172a',
-          isBold: true,
-          backgroundColor: 'none',
-        },
-      ]);
-    }
-  };
-
-  const applySideBySidePreset = () => {
-    if (sheetImages.length === 0) return;
-    const margin = 35;
-    const gap = 20;
-    const colW = Math.round((pageWidth - margin * 2 - gap) / 2);
-
-    const updated = sheetImages.map((img, idx) => {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
-      const ratio = img.height / (img.width || 1);
-      const itemH = Math.round(colW * ratio);
-      const x = margin + col * (colW + gap);
-      const y = 80 + row * (itemH + 40);
-      return {
-        ...img,
-        x,
-        y: Math.min(pageHeight - itemH - 20, y),
-        width: colW,
-        height: itemH,
-      };
-    });
-    setSheetImages(updated);
-  };
-
-  const applyGridPreset = () => {
-    if (sheetImages.length === 0) return;
-    const margin = 30;
-    const gap = 15;
-    const colW = Math.round((pageWidth - margin * 2 - gap) / 2);
-    const rowH = Math.round((pageHeight - margin * 2 - 80 - gap) / 2);
-
-    const updated = sheetImages.map((img, idx) => {
-      const col = idx % 2;
-      const row = Math.floor((idx % 4) / 2);
-      const x = margin + col * (colW + gap);
-      const y = 60 + row * (rowH + gap);
-      return {
-        ...img,
-        x,
-        y,
-        width: colW,
-        height: rowH,
-      };
-    });
-    setSheetImages(updated);
+  // Duplicate an image on paper
+  const handleDuplicateImage = (id: string) => {
+    const orig = sheetImages.find((img) => img.id === id);
+    if (!orig) return;
+    const copy: PaperImageElement = {
+      ...orig,
+      id: `p-img-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      x: Math.min(pageWidth - orig.width, orig.x + 25),
+      y: Math.min(pageHeight - orig.height, orig.y + 25),
+    };
+    setSheetImages((prev) => [...prev, copy]);
+    setSelectedElementId(copy.id);
   };
 
   const centerSelectedImage = () => {
@@ -811,44 +813,52 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
                 </div>
               </div>
 
-              {/* Layout Presets */}
+              {/* Free-form Actions on the Page */}
               <div className="h-8 w-px bg-slate-200 hidden md:block mx-1" />
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                  Layout Presets
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={applyCnicPreset}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
-                    title="Arranges 2 cards centered vertically (CNIC Front on top, Back on bottom)"
-                  >
-                    <IdCard className="w-3.5 h-3.5 text-blue-600" />
-                    <span>CNIC 2-in-1 Stacked</span>
-                  </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = true;
+                    input.accept = 'image/*';
+                    input.onchange = (e: any) => handleFiles(e.target.files);
+                    input.click();
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-xs"
+                  title="Add photos or document images directly to this page"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Add Image to Page</span>
+                </button>
 
-                  <button
-                    type="button"
-                    onClick={applySideBySidePreset}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
-                    title="Place 2 images side-by-side"
-                  >
-                    <Grid className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Side-by-Side</span>
-                  </button>
+                <button
+                  type="button"
+                  onClick={handleLoadCnicSample}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                  title="Load demo ID card (CNIC Front & Back) to adjust"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Load Sample Card</span>
+                </button>
 
+                {(sheetImages.length > 0 || sheetTexts.length > 0) && (
                   <button
                     type="button"
-                    onClick={applyGridPreset}
-                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
-                    title="Place 4 images in a 2x2 grid"
+                    onClick={() => {
+                      setSheetImages([]);
+                      setSheetTexts([]);
+                      setSelectedElementId(null);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Clear page contents"
                   >
-                    <Layers className="w-3.5 h-3.5 text-amber-600" />
-                    <span>4-on-1 Grid</span>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear Page</span>
                   </button>
-                </div>
+                )}
               </div>
             </div>
 
@@ -923,13 +933,18 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
             <div className="text-xs text-slate-600 mb-3 flex items-center gap-2 bg-white/80 backdrop-blur-xs px-3.5 py-1.5 rounded-lg border border-slate-200 shadow-2xs">
               <Move className="w-3.5 h-3.5 text-blue-600" />
               <span>
-                <strong>Drag &amp; Adjust:</strong> Click any card to move, rotate, resize, or click <strong>"✍️ Write on Image"</strong> in its top bar to stamp writing directly onto it!
+                <strong>Free-form One Page Canvas:</strong> Drag images anywhere on the page, grab <strong>any of the 4 corner handles</strong> to freely resize, or click <strong>"✍️ Write on Image"</strong> to stamp or write on it!
               </span>
             </div>
 
             {/* Paper Sheet Representation */}
             <div
               ref={paperRef}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleFiles(e.dataTransfer.files);
+              }}
               style={{
                 width: `${pageWidth}px`,
                 height: `${pageHeight}px`,
@@ -955,6 +970,47 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
                     PRINTABLE AREA ({sheetPaper} {sheetOrientation})
                   </div>
                   <div className="absolute top-1/2 left-0 right-0 border-b border-dashed border-slate-200 pointer-events-none" />
+                </div>
+              )}
+
+              {/* Empty state directly on the paper */}
+              {sheetImages.length === 0 && sheetTexts.length === 0 && (
+                <div
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.multiple = true;
+                    input.accept = 'image/*';
+                    input.onchange = (ev: any) => handleFiles(ev.target.files);
+                    input.click();
+                  }}
+                  className="absolute inset-10 border-2 border-dashed border-slate-300 hover:border-blue-500 rounded-2xl flex flex-col items-center justify-center p-8 text-center cursor-pointer bg-slate-50/60 hover:bg-blue-50/25 transition-all group"
+                >
+                  <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform shadow-xs">
+                    <Upload className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-base font-bold text-slate-800 mb-1">
+                    Add Images to this One Page
+                  </h3>
+                  <p className="text-xs text-slate-500 max-w-sm mb-4">
+                    Click to upload or drag &amp; drop images (e.g. Passport, CNIC front &amp; back, documents, cards). Move and resize freely from any corner.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold shadow-xs">
+                      Choose Images
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        handleLoadCnicSample();
+                      }}
+                      className="px-3 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold shadow-2xs"
+                    >
+                      Load Sample CNIC (2 Sides)
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1077,6 +1133,15 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
                           <ArrowRight className="w-3 h-3 rotate-90" />
                         </button>
 
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicateImage(img.id)}
+                          className="p-1 hover:bg-slate-700 rounded transition-colors text-slate-200 hover:text-white"
+                          title="Duplicate this image"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+
                         <div className="w-px h-3.5 bg-slate-700 mx-0.5" />
 
                         <button
@@ -1090,28 +1155,97 @@ export const ImageToPdfTool: React.FC<ImageToPdfToolProps> = ({ autoLoadSample }
                       </div>
                     )}
 
-                    {/* Resize Handle (Bottom-Right Corner) */}
+                    {/* 4 Corner Resize Handles (NW, NE, SW, SE) */}
                     {isSelected && (
-                      <div
-                        onPointerDown={(e) => {
-                          e.stopPropagation();
-                          dragRef.current = {
-                            activeId: img.id,
-                            type: 'resize-img',
-                            startX: e.clientX,
-                            startY: e.clientY,
-                            elemStartX: img.x,
-                            elemStartY: img.y,
-                            elemStartW: img.width,
-                            elemStartH: img.height,
-                            aspectRatio: img.width / (img.height || 1),
-                          };
-                        }}
-                        className="absolute -bottom-2 -right-2 w-5 h-5 bg-blue-600 rounded-full border-2 border-white cursor-se-resize shadow-md flex items-center justify-center hover:scale-125 transition-transform z-30"
-                        title="Drag to resize"
-                      >
-                        <div className="w-1.5 h-1.5 bg-white rounded-full" />
-                      </div>
+                      <>
+                        {/* Top-Left Corner Handle */}
+                        <div
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            dragRef.current = {
+                              activeId: img.id,
+                              type: 'resize-nw',
+                              startX: e.clientX,
+                              startY: e.clientY,
+                              elemStartX: img.x,
+                              elemStartY: img.y,
+                              elemStartW: img.width,
+                              elemStartH: img.height,
+                              aspectRatio: img.width / (img.height || 1),
+                            };
+                          }}
+                          className="absolute -top-2.5 -left-2.5 w-5 h-5 bg-blue-600 rounded-full border-2 border-white cursor-nwse-resize shadow-md flex items-center justify-center hover:scale-125 transition-transform z-30"
+                          title="Drag corner to resize"
+                        >
+                          <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                        </div>
+
+                        {/* Top-Right Corner Handle */}
+                        <div
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            dragRef.current = {
+                              activeId: img.id,
+                              type: 'resize-ne',
+                              startX: e.clientX,
+                              startY: e.clientY,
+                              elemStartX: img.x,
+                              elemStartY: img.y,
+                              elemStartW: img.width,
+                              elemStartH: img.height,
+                              aspectRatio: img.width / (img.height || 1),
+                            };
+                          }}
+                          className="absolute -top-2.5 -right-2.5 w-5 h-5 bg-blue-600 rounded-full border-2 border-white cursor-nesw-resize shadow-md flex items-center justify-center hover:scale-125 transition-transform z-30"
+                          title="Drag corner to resize"
+                        >
+                          <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                        </div>
+
+                        {/* Bottom-Left Corner Handle */}
+                        <div
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            dragRef.current = {
+                              activeId: img.id,
+                              type: 'resize-sw',
+                              startX: e.clientX,
+                              startY: e.clientY,
+                              elemStartX: img.x,
+                              elemStartY: img.y,
+                              elemStartW: img.width,
+                              elemStartH: img.height,
+                              aspectRatio: img.width / (img.height || 1),
+                            };
+                          }}
+                          className="absolute -bottom-2.5 -left-2.5 w-5 h-5 bg-blue-600 rounded-full border-2 border-white cursor-nesw-resize shadow-md flex items-center justify-center hover:scale-125 transition-transform z-30"
+                          title="Drag corner to resize"
+                        >
+                          <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                        </div>
+
+                        {/* Bottom-Right Corner Handle */}
+                        <div
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            dragRef.current = {
+                              activeId: img.id,
+                              type: 'resize-se',
+                              startX: e.clientX,
+                              startY: e.clientY,
+                              elemStartX: img.x,
+                              elemStartY: img.y,
+                              elemStartW: img.width,
+                              elemStartH: img.height,
+                              aspectRatio: img.width / (img.height || 1),
+                            };
+                          }}
+                          className="absolute -bottom-2.5 -right-2.5 w-5 h-5 bg-blue-600 rounded-full border-2 border-white cursor-nwse-resize shadow-md flex items-center justify-center hover:scale-125 transition-transform z-30"
+                          title="Drag corner to resize"
+                        >
+                          <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                        </div>
+                      </>
                     )}
                   </div>
                 );
