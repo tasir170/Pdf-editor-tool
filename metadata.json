@@ -1,0 +1,6 @@
+{
+  "name": "Sajeda PDF Studio",
+  "description": "Complete online PDF workspace — Image to PDF with cropping & filters, visual Merge PDF with page reordering, Split PDF by range or visual picker, full-featured interactive PDF Editor, and PDF Resizer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
